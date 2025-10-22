@@ -87,7 +87,9 @@ def login():
     data = request.get_json()
     username = data.get("username")
     password = data.get("password")
+
     user = _get_user(username)
+
     if user and check_password_hash(user.password, password):
         message = f"successfully logged in - {user.username}"
         access_token = create_access_token(identity=str(user.id))
@@ -104,24 +106,29 @@ def login():
 @jwt_required()
 def create_task():
     current_user_id = int(get_jwt_identity())
+
     data = request.get_json()
     title = data.get("title")
     content = data.get("content")
     completed = data.get("completed")
-    task = Task(
-        title=title, content=content, completed=completed, user_id=current_user_id
-    )
-    db.session.add(task)
-    db.session.commit()
-    message = f"successfully added task {task.id}"
-    return jsonify({"message": message}), 200
+
+    task = _create_task(title, content, completed, current_user_id)
+
+    if task:
+        message = f"successfully added task {task.id}"
+        return jsonify({"message": message}), 200
+    else:
+        message = "Could not create task"
+        return jsonify({"message": message}), 200
 
 
 @app.route("/tasks", methods=["GET"])
 @jwt_required()
 def get_tasks():
     current_user_id = int(get_jwt_identity())
-    tasks = Task.query.filter_by(user_id=current_user_id).all()
+
+    tasks = _get_tasks(current_user_id)
+
     output = []
     for task in tasks:
         task_data = {"id": task.id, "title": task.title, "completed": task.completed}
@@ -133,7 +140,9 @@ def get_tasks():
 @jwt_required()
 def get_task_detail(task_id: int):
     current_user_id = int(get_jwt_identity())
-    task = db.session.get(Task, task_id)
+
+    task = _get_task(task_id)
+
     if task is None:
         message = f"no task with id: {task_id}"
         return jsonify({"message": message}), 404
@@ -207,6 +216,23 @@ def _create_user(username: str, password: str) -> User:
     db.session.add(user)
     db.session.commit()
     return user
+
+
+def _create_task(title, content, completed, user_id):
+    task = Task(title=title, content=content, completed=completed, user_id=user_id)
+    db.session.add(task)
+    db.session.commit()
+    return task
+
+
+def _get_tasks(user_id):
+    tasks = Task.query.filter_by(user_id=user_id).all()
+    return tasks
+
+
+def _get_task(task_id):
+    task = db.session.get(Task, task_id)
+    return task
 
 
 ### APPLICATION STARTUP
