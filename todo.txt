@@ -1,0 +1,8 @@
+JWT authentication
+set user_id, task_id combination as Primary key so each user has tasks starting from id 1
+Make code cleaner - helper functions
+Make unit tests
+Add migrations
+Include ML model in backend
+Deploy to server + add log 
+Run app using Azure resources
