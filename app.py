@@ -76,11 +76,7 @@ def signup():
         message = "User already exists"
         return jsonify({"message": message}), 409
     else:
-        user = User(
-            username=username, password=generate_password_hash(password=password)
-        )
-        db.session.add(user)
-        db.session.commit()
+        user = _create_user(username, password)
         message = f"successfully created user - {user.username}"
         access_token = create_access_token(identity=str(user.id))
         return jsonify({"message": message, "access_token": access_token}), 201
@@ -197,9 +193,19 @@ def complete_task(task_id: int):
 
 
 ### HELPER FUNCTIONS
-def _get_user(username: str) -> bool:
+def _get_user(username: str) -> User:
     query = select(User).where(User.username == username)
     user = db.session.execute(query).scalar_one_or_none()
+    return user
+
+
+def _create_user(username: str, password: str) -> User:
+    hashed_password = generate_password_hash(
+        password=password
+    )  # hash password to store in DB
+    user = User(username=username, password=hashed_password)
+    db.session.add(user)
+    db.session.commit()
     return user
 
 
