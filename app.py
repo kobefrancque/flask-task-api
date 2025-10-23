@@ -3,8 +3,18 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-from sqlalchemy import String, Boolean, DateTime, func, ForeignKey, select
+from sqlalchemy import (
+    String,
+    Boolean,
+    DateTime,
+    Integer,
+    func,
+    ForeignKey,
+    select,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.schema import PrimaryKeyConstraint
 from flask_jwt_extended import (
     JWTManager,
     jwt_required,
@@ -44,7 +54,7 @@ class User(db.Model):
 class Task(db.Model):
     __tablename__ = "tasks"
 
-    id: Mapped[int] = mapped_column(primary_key=True, nullable=False)
+    id: Mapped[int] = mapped_column(Integer(), nullable=False)
     title: Mapped[str] = mapped_column(String(100), nullable=False)
     content: Mapped[str] = mapped_column(String(1000), nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean(), default=False, nullable=False)
@@ -54,6 +64,9 @@ class Task(db.Model):
 
     # foreign key: reference to user
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    # composite primary key
+    __table_args__ = (PrimaryKeyConstraint(id, user_id),)
 
     # relationship
     user: Mapped["User"] = relationship("User", back_populates="tasks")
@@ -106,13 +119,13 @@ def login():
 @jwt_required()
 def create_task():
     current_user_id = int(get_jwt_identity())
-
+    task_id = _get_next_task_id(current_user_id)
     data = request.get_json()
     title = data.get("title")
     content = data.get("content")
     completed = data.get("completed")
 
-    task = _create_task(title, content, completed, current_user_id)
+    task = _create_task(id=task_id, title=title, content=content, completed=completed, user_id=current_user_id)
 
     if task:
         message = f"successfully added task {task.id}"
@@ -126,7 +139,6 @@ def create_task():
 @jwt_required()
 def get_tasks():
     current_user_id = int(get_jwt_identity())
-
     tasks = _get_tasks(current_user_id)
 
     output = []
@@ -140,8 +152,7 @@ def get_tasks():
 @jwt_required()
 def get_task_detail(task_id: int):
     current_user_id = int(get_jwt_identity())
-
-    task = _get_task(task_id)
+    task = _get_task(task_id, current_user_id)
 
     if task is None:
         message = f"no task with id: {task_id}"
@@ -165,13 +176,13 @@ def get_task_detail(task_id: int):
 @jwt_required()
 def delete_task(task_id: int):
     current_user_id = int(get_jwt_identity())
-    task = db.session.get(Task, task_id)
+    task = _get_task(task_id, current_user_id)
+    
     if task is None:
         message = f"no task with id: {task_id}"
         return jsonify({"message": message}), 404
     elif task.user_id == current_user_id:
-        db.session.delete(task)
-        db.session.commit()
+        _delete_task(task)
         message = f"successfully removed task {task.id}"
         return jsonify({"message": message}), 200
     else:
@@ -183,7 +194,8 @@ def delete_task(task_id: int):
 @jwt_required()
 def complete_task(task_id: int):
     current_user_id = int(get_jwt_identity())
-    task = db.session.get(Task, task_id)
+    task = _get_task(task_id, current_user_id)
+    
     if task is None:
         message = f"no task with id: {task_id}"
         return jsonify({"message": message}), 404
@@ -192,8 +204,7 @@ def complete_task(task_id: int):
             message = "task already completed"
             return jsonify({"message": message}), 404
         else:
-            task.completed = True
-            db.session.commit()
+            _complete_task(task)
             message = f"task {task_id} completed"
             return jsonify({"message": message}), 200
     else:
@@ -201,8 +212,8 @@ def complete_task(task_id: int):
         return jsonify({"message": message}), 403
 
 
-### HELPER FUNCTIONS
-def _get_user(username: str) -> User:
+### CRUD HELPER FUNCTIONS
+def _get_user(username: str) -> User | None:
     query = select(User).where(User.username == username)
     user = db.session.execute(query).scalar_one_or_none()
     return user
@@ -218,22 +229,42 @@ def _create_user(username: str, password: str) -> User:
     return user
 
 
-def _create_task(title, content, completed, user_id):
-    task = Task(title=title, content=content, completed=completed, user_id=user_id)
+def _create_task(id: int, title: str, content: str, completed: bool, user_id: int) -> Task:
+    task = Task(id=id, title=title, content=content, completed=completed, user_id=user_id)
     db.session.add(task)
     db.session.commit()
     return task
 
 
-def _get_tasks(user_id):
-    tasks = Task.query.filter_by(user_id=user_id).all()
+def _get_tasks(user_id: int) -> list[Task] | None:
+    query = select(Task).where(Task.user_id == user_id)
+    result = db.session.execute(query)
+    tasks = result.scalars().all()
     return tasks
 
 
-def _get_task(task_id):
-    task = db.session.get(Task, task_id)
+def _get_task(task_id: int, user_id: int) -> Task | None:
+    query = select(Task).where(Task.id == task_id, Task.user_id == user_id)
+    result = db.session.execute(query)
+    task = result.scalar_one_or_none()
     return task
 
+
+def _get_next_task_id(user_id: int) -> int:
+    query = text("SELECT COALESCE(MAX(id), 0) FROM tasks WHERE user_id = :user_id")
+    result = db.session.execute(query, {"user_id": user_id})
+    next_task_id = result.scalar_one() + 1
+    return next_task_id
+
+
+def _delete_task(task: Task):
+    db.session.delete(task)
+    db.session.commit()
+    
+    
+def _complete_task(task):
+    task.completed = True
+    db.session.commit()
 
 ### APPLICATION STARTUP
 if __name__ == "__main__":
