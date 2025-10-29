@@ -120,12 +120,19 @@ def login():
 def create_task():
     current_user_id = int(get_jwt_identity())
     task_id = _get_next_task_id(current_user_id)
+
     data = request.get_json()
     title = data.get("title")
     content = data.get("content")
     completed = data.get("completed")
 
-    task = _create_task(id=task_id, title=title, content=content, completed=completed, user_id=current_user_id)
+    task = _create_task(
+        id=task_id,
+        title=title,
+        content=content,
+        completed=completed,
+        user_id=current_user_id,
+    )
 
     if task:
         message = f"successfully added task {task.id}"
@@ -177,7 +184,7 @@ def get_task_detail(task_id: int):
 def delete_task(task_id: int):
     current_user_id = int(get_jwt_identity())
     task = _get_task(task_id, current_user_id)
-    
+
     if task is None:
         message = f"no task with id: {task_id}"
         return jsonify({"message": message}), 404
@@ -195,7 +202,7 @@ def delete_task(task_id: int):
 def complete_task(task_id: int):
     current_user_id = int(get_jwt_identity())
     task = _get_task(task_id, current_user_id)
-    
+
     if task is None:
         message = f"no task with id: {task_id}"
         return jsonify({"message": message}), 404
@@ -229,8 +236,12 @@ def _create_user(username: str, password: str) -> User:
     return user
 
 
-def _create_task(id: int, title: str, content: str, completed: bool, user_id: int) -> Task:
-    task = Task(id=id, title=title, content=content, completed=completed, user_id=user_id)
+def _create_task(
+    id: int, title: str, content: str, completed: bool, user_id: int
+) -> Task:
+    task = Task(
+        id=id, title=title, content=content, completed=completed, user_id=user_id
+    )
     db.session.add(task)
     db.session.commit()
     return task
@@ -260,11 +271,12 @@ def _get_next_task_id(user_id: int) -> int:
 def _delete_task(task: Task):
     db.session.delete(task)
     db.session.commit()
-    
-    
-def _complete_task(task):
+
+
+def _complete_task(task: Task):
     task.completed = True
     db.session.commit()
+
 
 ### APPLICATION STARTUP
 if __name__ == "__main__":
